@@ -1,0 +1,139 @@
+# ============================================
+# GitHub Actions - Deploy Research Backend
+# Deploys API + Celery Worker to Cloud Run
+# ============================================
+
+name: Deploy Research Backend
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: my-research-project-123-489917
+  REGION: us-central1
+  REPO_NAME: research-backend
+  API_IMAGE_NAME: research-api
+  WORKER_IMAGE_NAME: research-worker
+  API_SERVICE_NAME: research-backend
+  WORKER_SERVICE_NAME: research-worker
+  WIF_PROVIDER: projects/731304399956/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SERVICE_ACCOUNT: github-actions-deployer@my-research-project-123-489917.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # --- Checkout ---
+      - uses: actions/checkout@v4
+
+      # --- Authenticate with GCP via Workload Identity Federation ---
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      # --- Setup gcloud CLI ---
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      # --- Configure Docker for Artifact Registry ---
+      - name: Configure Docker
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      # --- Build & Push API Image ---
+      - name: Build and Push API Image
+        run: |
+          IMAGE=us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.API_IMAGE_NAME }}
+
+          docker build \
+            -t $IMAGE:${{ github.sha }} \
+            -t $IMAGE:latest \
+            -f Dockerfile .
+
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      # --- Build & Push Worker Image ---
+      - name: Build and Push Worker Image
+        run: |
+          IMAGE=us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.WORKER_IMAGE_NAME }}
+
+          docker build \
+            -t $IMAGE:${{ github.sha }} \
+            -t $IMAGE:latest \
+            -f Dockerfile.worker .
+
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      # --- Deploy API to Cloud Run ---
+      - name: Deploy API to Cloud Run
+        run: |
+          IMAGE=us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.API_IMAGE_NAME }}:${{ github.sha }}
+
+          gcloud run deploy ${{ env.API_SERVICE_NAME }} \
+            --image=$IMAGE \
+            --region=${{ env.REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --memory=2Gi \
+            --cpu=2 \
+            --max-instances=10 \
+            --min-instances=0 \
+            --timeout=300 \
+            --concurrency=80 \
+            --port=8000 \
+            --set-env-vars="APP_ENV=production,PORT=8000" \
+            --set-secrets="\
+          DATABASE_URL=database-url:latest,\
+          JWT_SECRET_KEY=jwt-secret-key:latest,\
+          REDIS_URL=redis-url:latest,\
+          REDIS_HOST=redis-host:latest,\
+          CELERY_BROKER_URL=celery-broker-url:latest,\
+          CELERY_RESULT_BACKEND=celery-result-backend:latest,\
+          HUGGINGFACE_API_TOKEN=huggingface-api-token:latest,\
+          GCP_BUCKET_NAME=gcp-bucket-name:latest"
+
+      # --- Deploy Worker to Cloud Run ---
+      - name: Deploy Worker to Cloud Run
+        run: |
+          IMAGE=us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.WORKER_IMAGE_NAME }}:${{ github.sha }}
+
+          gcloud run deploy ${{ env.WORKER_SERVICE_NAME }} \
+            --image=$IMAGE \
+            --region=${{ env.REGION }} \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --memory=2Gi \
+            --cpu=2 \
+            --max-instances=5 \
+            --min-instances=0 \
+            --timeout=900 \
+            --no-cpu-throttling \
+            --set-env-vars="APP_ENV=production" \
+            --set-secrets="\
+          DATABASE_URL=database-url:latest,\
+          REDIS_URL=redis-url:latest,\
+          REDIS_HOST=redis-host:latest,\
+          CELERY_BROKER_URL=celery-broker-url:latest,\
+          CELERY_RESULT_BACKEND=celery-result-backend:latest,\
+          HUGGINGFACE_API_TOKEN=huggingface-api-token:latest,\
+          GCP_BUCKET_NAME=gcp-bucket-name:latest"
+
+      # --- Print Service URLs ---
+      - name: Get Service URLs
+        run: |
+          echo "=== Deployment Complete ==="
+          API_URL=$(gcloud run services describe ${{ env.API_SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          WORKER_URL=$(gcloud run services describe ${{ env.WORKER_SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "🚀 API:    $API_URL"
+          echo "⚙️  Worker: $WORKER_URL"
+          echo "❤️  Health: $API_URL/api/v1/health"

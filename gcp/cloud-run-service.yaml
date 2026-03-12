@@ -30,9 +30,9 @@ spec:
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
-      serviceAccountName: research-backend-sa@PROJECT_ID.iam.gserviceaccount.com
+      serviceAccountName: research-backend-sa@my-research-project-123-489917.iam.gserviceaccount.com
       containers:
-        - image: gcr.io/PROJECT_ID/research-backend:latest
+        - image: us-central1-docker.pkg.dev/my-research-project-123-489917/research-backend/research-api:latest
           ports:
             - containerPort: 8000
               name: http1
