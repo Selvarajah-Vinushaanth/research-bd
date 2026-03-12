@@ -60,7 +60,7 @@ model Paper {
   authors         String[]        @default([])
   abstract        String?         @db.Text
   file_url        String
-  file_hash       String?         @unique
+  file_hash       String?
   doi             String?         @unique
   journal         String?
   publication_date DateTime?
@@ -90,6 +90,7 @@ model Paper {
   @@index([uploaded_by])
   @@index([status])
   @@index([created_at])
+  @@index([file_hash, uploaded_by])
   @@map("papers")
 }
 
