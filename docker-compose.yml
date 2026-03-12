@@ -1,0 +1,126 @@
+# ============================================
+# Docker Compose - AI Research Assistant
+# Full development stack
+# ============================================
+
+version: "3.9"
+
+services:
+  # --- Redis ---
+  redis:
+    image: redis:7-alpine
+    container_name: research_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - research_net
+
+  # --- FastAPI Backend ---
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/research_assistant
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - APP_ENV=development
+      - DEBUG=true
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - model_cache:/app/model_cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - research_net
+
+  # --- Celery Worker ---
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: research_celery_worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/research_assistant
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - model_cache:/app/model_cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - research_net
+
+  # --- Celery Beat (Scheduler) ---
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: research_celery_beat
+    restart: unless-stopped
+    command: celery -A app.workers.celery_worker:celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/research_assistant
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - research_net
+
+  # --- Flower (Celery monitoring) ---
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: research_flower
+    restart: unless-stopped
+    command: celery -A app.workers.celery_worker:celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - research_net
+
+volumes:
+  redis_data:
+    driver: local
+  model_cache:
+    driver: local
+
+networks:
+  research_net:
+    driver: bridge

@@ -1,0 +1,6 @@
+#!/home/vinushaanth/research/backend/research/bin/python
+import sys
+from uvicorn app.main import app --host 0
+
+if __name__ == '__main__':
+    sys.exit(app --host 0.0.0.0 --port 8000())

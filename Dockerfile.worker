@@ -1,0 +1,64 @@
+# ============================================
+# Dockerfile for Celery Worker (Poetry)
+# ============================================
+
+FROM python:3.11-slim AS builder
+
+ENV POETRY_VERSION=1.8.2 \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1
+
+RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+
+WORKDIR /app
+
+# Install system dependencies for building
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency manifests first (layer caching)
+COPY pyproject.toml poetry.lock* ./
+RUN poetry install --only main --no-root --no-directory
+
+COPY . .
+RUN poetry install --only main
+
+
+# --- Production ---
+FROM python:3.11-slim
+
+RUN groupadd -r celeryuser && useradd -r -g celeryuser -d /app -s /sbin/nologin celeryuser
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy application code
+COPY . .
+
+# Put venv on PATH
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
+
+# Generate Prisma client
+RUN prisma generate
+
+# Set ownership
+RUN chown -R celeryuser:celeryuser /app
+
+USER celeryuser
+
+# Default: run Celery worker
+CMD ["celery", "-A", "app.workers.celery_worker:celery_app", "worker", \
+     "--loglevel=info", \
+     "--concurrency=2", \
+     "--max-tasks-per-child=50", \
+     "-Q", "paper_processing,embedding,ai_tasks"]

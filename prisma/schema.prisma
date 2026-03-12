@@ -1,0 +1,499 @@
+// ============================================
+// Prisma Schema - AI Research Assistant  
+// ============================================
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public")]
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+  previewFeatures      = ["postgresqlExtensions"]
+}
+
+// ============================================
+// Core User Model
+// ============================================
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  password       String
+  name           String
+  avatar_url     String?
+  institution    String?
+  research_areas String[]        @default([])
+  role           UserRole        @default(RESEARCHER)
+  is_active      Boolean         @default(true)
+  last_login     DateTime?
+  created_at     DateTime        @default(now())
+  updated_at     DateTime        @updatedAt
+
+  papers         Paper[]
+  chat_sessions  ChatSession[]
+  research_notes ResearchNote[]
+  collections    Collection[]
+  reading_list   ReadingListItem[]
+  annotations    Annotation[]
+  activity_logs  ActivityLog[]
+  comparisons    PaperComparison[]
+  lit_reviews    LiteratureReview[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  RESEARCHER
+  ADMIN
+  REVIEWER
+}
+
+// ============================================
+// Research Paper
+// ============================================
+model Paper {
+  id              String          @id @default(uuid())
+  title           String
+  authors         String[]        @default([])
+  abstract        String?         @db.Text
+  file_url        String
+  file_hash       String?         @unique
+  doi             String?         @unique
+  journal         String?
+  publication_date DateTime?
+  keywords        String[]        @default([])
+  language        String          @default("en")
+  page_count      Int?
+  status          PaperStatus     @default(PENDING)
+  processing_progress Float       @default(0)
+  uploaded_by     String
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+
+  uploader        User            @relation(fields: [uploaded_by], references: [id], onDelete: Cascade)
+  chunks          PaperChunk[]
+  chat_sessions   ChatSession[]
+  research_notes  ResearchNote[]
+  citations       Citation[]
+  paper_clusters  PaperCluster[]
+  summaries       PaperSummary[]
+  insights        PaperInsight[]
+  metadata        PaperMetadata?
+  references      PaperReference[] @relation("SourcePaper")
+  referenced_by   PaperReference[] @relation("ReferencedPaper")
+  reading_items   ReadingListItem[]
+  annotations     Annotation[]
+
+  @@index([uploaded_by])
+  @@index([status])
+  @@index([created_at])
+  @@map("papers")
+}
+
+enum PaperStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  ARCHIVED
+}
+
+// ============================================
+// Paper Text Chunks with Vector Embeddings
+// ============================================
+model PaperChunk {
+  id            String    @id @default(uuid())
+  paper_id      String
+  chunk_index   Int
+  chunk_text    String    @db.Text
+  token_count   Int       @default(0)
+  page_number   Int?
+  section       String?
+  embedding     Unsupported("vector(384)")?
+  created_at    DateTime  @default(now())
+
+  paper         Paper     @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([paper_id])
+  @@index([paper_id, chunk_index])
+  @@map("paper_chunks")
+}
+
+// ============================================
+// Chat System
+// ============================================
+model ChatSession {
+  id          String        @id @default(uuid())
+  user_id     String
+  paper_id    String?
+  title       String        @default("New Chat")
+  session_type SessionType  @default(SINGLE_PAPER)
+  is_active   Boolean       @default(true)
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+
+  user        User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  paper       Paper?        @relation(fields: [paper_id], references: [id], onDelete: SetNull)
+  messages    ChatMessage[]
+
+  @@index([user_id])
+  @@index([paper_id])
+  @@map("chat_sessions")
+}
+
+enum SessionType {
+  SINGLE_PAPER
+  MULTI_PAPER
+  GENERAL
+}
+
+model ChatMessage {
+  id              String      @id @default(uuid())
+  session_id      String
+  role            MessageRole
+  message         String      @db.Text
+  response        String?     @db.Text
+  context_chunks  String[]    @default([])
+  confidence      Float?
+  tokens_used     Int?
+  response_time   Float?
+  created_at      DateTime    @default(now())
+
+  session         ChatSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id])
+  @@index([created_at])
+  @@map("chat_messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// ============================================
+// Research Notes
+// ============================================
+model ResearchNote {
+  id          String    @id @default(uuid())
+  user_id     String
+  paper_id    String?
+  title       String    @default("Untitled Note")
+  content     String    @db.Text
+  note_type   NoteType  @default(MANUAL)
+  tags        String[]  @default([])
+  is_pinned   Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  paper       Paper?    @relation(fields: [paper_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([paper_id])
+  @@map("research_notes")
+}
+
+enum NoteType {
+  MANUAL
+  AI_GENERATED
+  HIGHLIGHT
+  ANNOTATION
+}
+
+// ============================================
+// Citations
+// ============================================
+model Citation {
+  id             String          @id @default(uuid())
+  paper_id       String
+  citation_text  String          @db.Text
+  format         CitationFormat
+  created_at     DateTime        @default(now())
+
+  paper          Paper           @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([paper_id])
+  @@map("citations")
+}
+
+enum CitationFormat {
+  APA
+  MLA
+  IEEE
+  CHICAGO
+  HARVARD
+  BIBTEX
+}
+
+// ============================================
+// Topic Clustering
+// ============================================
+model TopicCluster {
+  id              String          @id @default(uuid())
+  name            String
+  description     String?         @db.Text
+  keywords        String[]        @default([])
+  centroid        Unsupported("vector(384)")?
+  paper_count     Int             @default(0)
+  algorithm       String          @default("kmeans")
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+
+  papers          PaperCluster[]
+
+  @@map("topic_clusters")
+}
+
+model PaperCluster {
+  id          String        @id @default(uuid())
+  paper_id    String
+  cluster_id  String
+  distance    Float?
+  created_at  DateTime      @default(now())
+
+  paper       Paper         @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+  cluster     TopicCluster  @relation(fields: [cluster_id], references: [id], onDelete: Cascade)
+
+  @@unique([paper_id, cluster_id])
+  @@map("paper_clusters")
+}
+
+// ============================================
+// Paper Summaries (cached)
+// ============================================
+model PaperSummary {
+  id            String        @id @default(uuid())
+  paper_id      String
+  summary_type  SummaryType
+  background    String?       @db.Text
+  methodology   String?       @db.Text
+  results       String?       @db.Text
+  limitations   String?       @db.Text
+  conclusions   String?       @db.Text
+  full_summary  String?       @db.Text
+  created_at    DateTime      @default(now())
+
+  paper         Paper         @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([paper_id])
+  @@map("paper_summaries")
+}
+
+enum SummaryType {
+  STRUCTURED
+  ABSTRACT
+  BRIEF
+  DETAILED
+}
+
+// ============================================
+// Paper Insights
+// ============================================
+model PaperInsight {
+  id                String    @id @default(uuid())
+  paper_id          String
+  key_contributions String[]  @default([])
+  research_gaps     String[]  @default([])
+  future_work       String[]  @default([])
+  methodology_notes String[]  @default([])
+  strengths         String[]  @default([])
+  weaknesses        String[]  @default([])
+  created_at        DateTime  @default(now())
+
+  paper             Paper     @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([paper_id])
+  @@map("paper_insights")
+}
+
+// ============================================
+// Paper Metadata (extracted)
+// ============================================
+model PaperMetadata {
+  id                  String    @id @default(uuid())
+  paper_id            String    @unique
+  raw_text_length     Int?
+  chunk_count         Int?
+  detected_language   String?
+  detected_sections   String[]  @default([])
+  figure_count        Int?
+  table_count         Int?
+  equation_count      Int?
+  reference_count     Int?
+  extraction_quality  Float?
+  processing_time     Float?
+  created_at          DateTime  @default(now())
+
+  paper               Paper     @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@map("paper_metadata")
+}
+
+// ============================================
+// Paper References (citation graph)
+// ============================================
+model PaperReference {
+  id                String    @id @default(uuid())
+  source_paper_id   String
+  referenced_paper_id String?
+  reference_text    String    @db.Text
+  reference_title   String?
+  reference_authors String[]  @default([])
+  reference_year    Int?
+  created_at        DateTime  @default(now())
+
+  source_paper      Paper     @relation("SourcePaper", fields: [source_paper_id], references: [id], onDelete: Cascade)
+  referenced_paper  Paper?    @relation("ReferencedPaper", fields: [referenced_paper_id], references: [id], onDelete: SetNull)
+
+  @@index([source_paper_id])
+  @@map("paper_references")
+}
+
+// ============================================
+// Collections (folders for papers)
+// ============================================
+model Collection {
+  id          String              @id @default(uuid())
+  user_id     String
+  name        String
+  description String?
+  is_public   Boolean             @default(false)
+  created_at  DateTime            @default(now())
+  updated_at  DateTime            @updatedAt
+
+  user        User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  items       CollectionItem[]
+
+  @@index([user_id])
+  @@map("collections")
+}
+
+model CollectionItem {
+  id            String      @id @default(uuid())
+  collection_id String
+  paper_id      String
+  added_at      DateTime    @default(now())
+
+  collection    Collection  @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+
+  @@unique([collection_id, paper_id])
+  @@map("collection_items")
+}
+
+// ============================================
+// Reading List
+// ============================================
+model ReadingListItem {
+  id          String          @id @default(uuid())
+  user_id     String
+  paper_id    String
+  priority    ReadingPriority @default(MEDIUM)
+  status      ReadingStatus   @default(UNREAD)
+  notes       String?
+  due_date    DateTime?
+  added_at    DateTime        @default(now())
+
+  user        User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  paper       Paper           @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, paper_id])
+  @@map("reading_list")
+}
+
+enum ReadingPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ReadingStatus {
+  UNREAD
+  READING
+  COMPLETED
+  SKIPPED
+}
+
+// ============================================
+// Annotations
+// ============================================
+model Annotation {
+  id          String    @id @default(uuid())
+  user_id     String
+  paper_id    String
+  page_number Int?
+  content     String    @db.Text
+  highlight   String?   @db.Text
+  color       String    @default("#FFFF00")
+  position    Json?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  paper       Paper     @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, paper_id])
+  @@map("annotations")
+}
+
+// ============================================
+// Paper Comparisons (N-paper sessions)
+// ============================================
+model PaperComparison {
+  id              String    @id @default(uuid())
+  user_id         String
+  paper_ids       String[]  @default([])
+  results         Json?     // Array of pairwise comparison objects
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @default(now()) @updatedAt
+
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
+  @@map("paper_comparisons")
+}
+
+// ============================================
+// Literature Reviews
+// ============================================
+model LiteratureReview {
+  id              String    @id @default(uuid())
+  user_id         String
+  title           String    @default("Literature Review")
+  focus_topic     String?
+  review_text     String    @db.Text
+  papers_analyzed Int       @default(0)
+  paper_ids       String[]  @default([])
+  key_themes      String[]  @default([])
+  research_gaps   String[]  @default([])
+  created_at      DateTime  @default(now())
+
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
+  @@map("literature_reviews")
+}
+
+// ============================================
+// Activity Log
+// ============================================
+model ActivityLog {
+  id          String      @id @default(uuid())
+  user_id     String
+  action      String
+  resource    String?
+  resource_id String?
+  details     Json?
+  ip_address  String?
+  created_at  DateTime    @default(now())
+
+  user        User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
+  @@map("activity_logs")
+}

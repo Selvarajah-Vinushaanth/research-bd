@@ -1,0 +1,96 @@
+# ============================================
+# GCP Cloud Run Service Definition
+# AI Research Assistant Backend
+# ============================================
+#
+# Deploy with:
+#   gcloud run services replace gcp/cloud-run-service.yaml --region us-central1
+#
+# Or use:
+#   make gcp-deploy
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: research-backend
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: research-backend-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: gcr.io/PROJECT_ID/research-backend:latest
+          ports:
+            - containerPort: 8000
+              name: http1
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          env:
+            - name: APP_ENV
+              value: production
+            - name: PORT
+              value: "8000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: database-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: secret-key
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: redis-url
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: celery-broker-url
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: sentry-dsn
+            - name: GCS_BUCKET_NAME
+              value: research-assistant-uploads
+            - name: CORS_ORIGINS
+              value: "https://your-frontend-domain.com"
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8000
+            periodSeconds: 10
+  traffic:
+    - percent: 100
+      latestRevision: true
