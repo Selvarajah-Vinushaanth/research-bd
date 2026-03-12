@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 from typing import List, Optional
 
 import numpy as np
@@ -12,6 +14,11 @@ import structlog
 from huggingface_hub import InferenceClient
 
 from app.config import settings
+
+# Ensure HF SDK picks up the token for all internal HTTP calls
+_hf_token = settings.HUGGINGFACE_API_TOKEN
+if _hf_token and not os.environ.get("HF_TOKEN"):
+    os.environ["HF_TOKEN"] = _hf_token
 
 logger = structlog.get_logger()
 
@@ -56,16 +63,26 @@ class EmbeddingModel:
         return self._dimension
 
     def _embed_batch(self, texts: List[str]) -> List[List[float]]:
-        """Call HF Inference Providers for feature extraction."""
-        results = self._client.feature_extraction(
-            texts,
-            model=self._model_name,
-        )
-        # The SDK returns an np.ndarray or nested list.
-        # Ensure we always work with a list-of-lists.
-        if isinstance(results, np.ndarray):
-            return results.tolist()
-        return results
+        """Call HF Inference Providers for feature extraction with retry."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                results = self._client.feature_extraction(
+                    texts,
+                    model=self._model_name,
+                )
+                # The SDK returns an np.ndarray or nested list.
+                # Ensure we always work with a list-of-lists.
+                if isinstance(results, np.ndarray):
+                    return results.tolist()
+                return results
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning("hf_rate_limited_retrying", attempt=attempt + 1, wait=wait)
+                    time.sleep(wait)
+                    continue
+                raise
 
     def encode(
         self,

@@ -100,6 +100,7 @@ jobs:
           CELERY_BROKER_URL=celery-broker-url:latest,\
           CELERY_RESULT_BACKEND=celery-result-backend:latest,\
           HUGGINGFACE_API_TOKEN=huggingface-api-token:latest,\
+          HF_TOKEN=huggingface-api-token:latest,\
           GCP_BUCKET_NAME=gcp-bucket-name:latest"
 
       # --- Deploy Worker to Cloud Run ---
@@ -126,6 +127,7 @@ jobs:
           CELERY_BROKER_URL=celery-broker-url:latest,\
           CELERY_RESULT_BACKEND=celery-result-backend:latest,\
           HUGGINGFACE_API_TOKEN=huggingface-api-token:latest,\
+          HF_TOKEN=huggingface-api-token:latest,\
           GCP_BUCKET_NAME=gcp-bucket-name:latest"
 
       # --- Print Service URLs ---
