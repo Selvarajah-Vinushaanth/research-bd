@@ -25,6 +25,11 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
 
+    # Redis SSL configuration for rediss:// URLs
+    redis_socket_keepalive=True,
+    redis_socket_keepalive_options={},
+    redis_ssl_cert_reqs="none",
+
     # Worker settings
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
