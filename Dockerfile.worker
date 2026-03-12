@@ -59,9 +59,8 @@ RUN mkdir -p /app/.prisma-cache && \
 
 USER celeryuser
 
-# Default: run Celery worker
-CMD ["celery", "-A", "app.workers.celery_worker:celery_app", "worker", \
-     "--loglevel=info", \
-     "--concurrency=2", \
-     "--max-tasks-per-child=50", \
-     "-Q", "paper_processing,embedding,ai_tasks"]
+# Expose health check port
+EXPOSE 8080
+
+# Run both health check server + Celery worker
+CMD ["/bin/bash", "/app/worker_entrypoint.sh"]
