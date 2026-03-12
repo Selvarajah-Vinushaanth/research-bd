@@ -69,13 +69,13 @@ async def upload_paper(
             detail=message,
         )
 
-    # Check for duplicate
+    # Check for duplicate (per user — different users can upload the same paper)
     file_hash = PDFService.compute_hash(file_content)
-    existing = await db.paper.find_first(where={"file_hash": file_hash})
+    existing = await db.paper.find_first(where={"file_hash": file_hash, "uploaded_by": user.id})
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This paper has already been uploaded (ID: {existing.id})",
+            detail=f"You have already uploaded this paper (ID: {existing.id})",
         )
 
     # Extract basic metadata from PDF
