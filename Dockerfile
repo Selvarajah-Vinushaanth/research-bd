@@ -60,13 +60,13 @@ COPY . .
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PRISMA_BINARY_CACHE_DIR=/app/.prisma-cache
 
-# Generate Prisma client
-RUN prisma generate
-
-# Set ownership
-RUN chown -R appuser:appuser /app
+# Create prisma cache dir, generate client, then fix ownership
+RUN mkdir -p /app/.prisma-cache && \
+    prisma generate && \
+    chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
