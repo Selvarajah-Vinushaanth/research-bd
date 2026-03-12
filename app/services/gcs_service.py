@@ -43,9 +43,11 @@ class GCSService:
                 self._client = storage.Client(
                     credentials=credentials, project=settings.GCP_PROJECT_ID
                 )
+                self._signing_credentials = credentials
             else:
                 # Falls back to GOOGLE_APPLICATION_CREDENTIALS env var or default credentials
                 self._client = storage.Client(project=settings.GCP_PROJECT_ID or None)
+                self._signing_credentials = None
 
             self._bucket_name = settings.GCP_BUCKET_NAME
             self._bucket = self._client.bucket(self._bucket_name)
@@ -145,10 +147,26 @@ class GCSService:
             raise RuntimeError("GCS is not configured.")
 
         blob = self._bucket.blob(file_path)
-        url = blob.generate_signed_url(
-            expiration=datetime.timedelta(minutes=expiration_minutes),
-            method="GET",
-        )
+
+        # On Cloud Run (no explicit credentials), use IAM-based signing
+        if self._signing_credentials:
+            url = blob.generate_signed_url(
+                expiration=datetime.timedelta(minutes=expiration_minutes),
+                method="GET",
+            )
+        else:
+            import google.auth
+            from google.auth.transport import requests as auth_requests
+
+            signing_credentials, _ = google.auth.default()
+            if hasattr(signing_credentials, "refresh"):
+                signing_credentials.refresh(auth_requests.Request())
+
+            url = blob.generate_signed_url(
+                expiration=datetime.timedelta(minutes=expiration_minutes),
+                method="GET",
+                credentials=signing_credentials,
+            )
         logger.info(
             "gcs_signed_url_generated", path=file_path, expires_in_min=expiration_minutes
         )
