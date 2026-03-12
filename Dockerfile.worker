@@ -22,7 +22,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --only main --no-root --no-directory
 
 COPY . .
-RUN poetry install --only main
+RUN poetry install --only main --no-root
 
 
 # --- Production ---
@@ -32,9 +32,12 @@ RUN groupadd -r celeryuser && useradd -r -g celeryuser -d /app -s /sbin/nologin 
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies (libatomic1 + nodejs required for Prisma CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libatomic1 \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder

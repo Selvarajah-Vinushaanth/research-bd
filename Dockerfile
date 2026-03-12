@@ -30,7 +30,7 @@ RUN poetry install --only main --no-root --no-directory
 
 # Copy project source and install the project itself
 COPY . .
-RUN poetry install --only main
+RUN poetry install --only main --no-root
 
 
 # --- Stage 2: Production ---
@@ -41,10 +41,13 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuse
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies (libatomic1 + nodejs required for Prisma CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    libatomic1 \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
