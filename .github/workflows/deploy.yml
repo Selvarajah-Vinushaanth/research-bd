@@ -91,7 +91,7 @@ jobs:
             --timeout=300 \
             --concurrency=80 \
             --port=8000 \
-            --set-env-vars="APP_ENV=production,PORT=8000" \
+            --set-env-vars="APP_ENV=production" \
             --set-secrets="\
           DATABASE_URL=database-url:latest,\
           JWT_SECRET_KEY=jwt-secret-key:latest,\
