@@ -736,7 +736,6 @@ async def get_recommendations(
 # Activity Dashboard
 # ============================================
 
-
 @router.get("/dashboard")
 async def get_dashboard(user=Depends(get_current_user)):
     """
