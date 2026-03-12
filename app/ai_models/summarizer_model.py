@@ -4,13 +4,20 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 from typing import Dict, List, Optional
 
 import structlog
 from huggingface_hub import InferenceClient
 
 from app.config import settings
+
+# Ensure HF SDK picks up the token for all internal HTTP calls
+_hf_token = settings.HUGGINGFACE_API_TOKEN
+if _hf_token and not os.environ.get("HF_TOKEN"):
+    os.environ["HF_TOKEN"] = _hf_token
 
 logger = structlog.get_logger()
 
@@ -99,10 +106,22 @@ class SummarizerModel:
         min_length = min(min_length, max(10, len(words) // 4))
 
         try:
-            result = self._client.summarization(
-                text,
-                model=self._model_name,
-            )
+            max_retries = 3
+            result = None
+            for attempt in range(max_retries):
+                try:
+                    result = self._client.summarization(
+                        text,
+                        model=self._model_name,
+                    )
+                    break
+                except Exception as retry_err:
+                    if "429" in str(retry_err) and attempt < max_retries - 1:
+                        wait = 2 ** (attempt + 1)
+                        logger.warning("hf_summarize_rate_limited_retrying", attempt=attempt + 1, wait=wait)
+                        time.sleep(wait)
+                        continue
+                    raise
 
             # result is a SummarizationOutput with .summary_text
             summary = result.summary_text if hasattr(result, "summary_text") else str(result)

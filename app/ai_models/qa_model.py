@@ -4,13 +4,20 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 import structlog
 from huggingface_hub import InferenceClient
 
 from app.config import settings
+
+# Ensure HF SDK picks up the token for all internal HTTP calls
+_hf_token = settings.HUGGINGFACE_API_TOKEN
+if _hf_token and not os.environ.get("HF_TOKEN"):
+    os.environ["HF_TOKEN"] = _hf_token
 
 logger = structlog.get_logger()
 
@@ -77,11 +84,23 @@ class QAModel:
             return [{"answer": "No context available.", "score": 0.0}]
 
         try:
-            result = self._client.question_answering(
-                question=question,
-                context=context,
-                model=self._extractive_model,
-            )
+            max_retries = 3
+            result = None
+            for attempt in range(max_retries):
+                try:
+                    result = self._client.question_answering(
+                        question=question,
+                        context=context,
+                        model=self._extractive_model,
+                    )
+                    break
+                except Exception as retry_err:
+                    if "429" in str(retry_err) and attempt < max_retries - 1:
+                        wait = 2 ** (attempt + 1)
+                        logger.warning("hf_qa_rate_limited_retrying", attempt=attempt + 1, wait=wait)
+                        time.sleep(wait)
+                        continue
+                    raise
             answers = [
                 {
                     "answer": result.answer if hasattr(result, "answer") else str(result),
@@ -164,13 +183,25 @@ class QAModel:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = self._client.chat_completion(
-            model=self._generative_model,
-            messages=messages,
-            max_tokens=1024,
-            temperature=0.3,
-            top_p=0.9,
-        )
+        max_retries = 3
+        response = None
+        for attempt in range(max_retries):
+            try:
+                response = self._client.chat_completion(
+                    model=self._generative_model,
+                    messages=messages,
+                    max_tokens=1024,
+                    temperature=0.3,
+                    top_p=0.9,
+                )
+                break
+            except Exception as retry_err:
+                if "429" in str(retry_err) and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning("hf_gen_rate_limited_retrying", attempt=attempt + 1, wait=wait)
+                    time.sleep(wait)
+                    continue
+                raise
 
         answer_text = response.choices[0].message.content.strip()
 
