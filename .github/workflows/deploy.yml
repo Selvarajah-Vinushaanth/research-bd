@@ -91,7 +91,7 @@ jobs:
             --timeout=300 \
             --concurrency=80 \
             --port=8000 \
-            --set-env-vars="APP_ENV=production,ALLOWED_ORIGINS=https://*.vercel.app,GCP_PROJECT_ID=my-research-project-123-489917" \
+            --set-env-vars="APP_ENV=production,ALLOWED_ORIGINS=*,GCP_PROJECT_ID=my-research-project-123-489917" \
             --set-secrets="\
           DATABASE_URL=database-url:latest,\
           JWT_SECRET_KEY=jwt-secret-key:latest,\
