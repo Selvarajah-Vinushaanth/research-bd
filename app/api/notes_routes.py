@@ -26,11 +26,11 @@ async def create_note(request: NoteCreateRequest, user=Depends(get_current_user)
     """Create a new research note."""
     db = get_db()
 
-    # Verify paper exists if paper_id is provided
+    # Verify paper exists and belongs to the current user
     paper_title = None
     if request.paper_id:
         paper = await db.paper.find_unique(where={"id": request.paper_id})
-        if not paper:
+        if not paper or paper.uploaded_by != user.id:
             raise HTTPException(status_code=404, detail="Paper not found")
         paper_title = paper.title
 
@@ -199,7 +199,7 @@ async def generate_ai_note(request: AIGenerateNoteRequest, user=Depends(get_curr
     db = get_db()
 
     paper = await db.paper.find_unique(where={"id": request.paper_id})
-    if not paper:
+    if not paper or paper.uploaded_by != user.id:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     # Get paper text

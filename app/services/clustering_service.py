@@ -33,6 +33,7 @@ class ClusteringService:
         algorithm: str = "kmeans",
         n_clusters: int = 5,
         min_cluster_size: int = 3,
+        user_id: str | None = None,
     ) -> Dict:
         """
         Run topic clustering on all papers.
@@ -47,8 +48,8 @@ class ClusteringService:
         """
         start_time = time.time()
 
-        # Get average embeddings for each paper
-        paper_embeddings = await self._get_paper_embeddings()
+        # Get average embeddings for each paper (scoped to user)
+        paper_embeddings = await self._get_paper_embeddings(user_id=user_id)
 
         if len(paper_embeddings) < 2:
             raise ValueError("Need at least 2 papers for clustering")
@@ -133,12 +134,22 @@ class ClusteringService:
             "processing_time": elapsed,
         }
 
-    async def get_clusters(self) -> List[Dict]:
-        """Get all existing clusters with their papers."""
+    async def get_clusters(self, user_id: str | None = None) -> List[Dict]:
+        """Get all existing clusters with their papers, scoped to user when provided."""
         clusters = await self.db.topiccluster.find_many(
             include={"papers": {"include": {"paper": True}}},
             order={"paper_count": "desc"},
         )
+
+        # If user_id is provided, filter cluster papers to only include user's papers
+        if user_id:
+            filtered_clusters = []
+            for cluster in clusters:
+                user_papers = [pc for pc in (cluster.papers or []) if pc.paper and pc.paper.uploaded_by == user_id]
+                if user_papers:
+                    cluster.papers = user_papers
+                    filtered_clusters.append(cluster)
+            clusters = filtered_clusters
 
         result = []
         for cluster in clusters:
@@ -211,22 +222,37 @@ class ClusteringService:
             logger.warning("hdbscan_failed_falling_back_to_kmeans", error=str(e))
             return self._run_kmeans(embeddings, min(5, len(embeddings)))
 
-    async def _get_paper_embeddings(self) -> Dict[str, List[float]]:
+    async def _get_paper_embeddings(self, user_id: str | None = None) -> Dict[str, List[float]]:
         """Get average embeddings for each paper by fetching all chunk embeddings
         and computing the mean per paper in Python.
+        Scoped to user_id when provided.
         This avoids relying on SQL AVG() for pgvector types which may not work
         in all PostgreSQL / pgvector versions."""
         from collections import defaultdict
 
-        results = await self.db.query_raw(
-            """
-            SELECT
-                paper_id,
-                embedding::text as embedding_text
-            FROM paper_chunks
-            WHERE embedding IS NOT NULL
-            """
-        )
+        if user_id:
+            results = await self.db.query_raw(
+                """
+                SELECT
+                    pc.paper_id,
+                    pc.embedding::text as embedding_text
+                FROM paper_chunks pc
+                JOIN papers p ON pc.paper_id = p.id
+                WHERE pc.embedding IS NOT NULL
+                    AND p.uploaded_by = $1
+                """,
+                user_id,
+            )
+        else:
+            results = await self.db.query_raw(
+                """
+                SELECT
+                    paper_id,
+                    embedding::text as embedding_text
+                FROM paper_chunks
+                WHERE embedding IS NOT NULL
+                """
+            )
 
         paper_vectors: Dict[str, list] = defaultdict(list)
         for row in results:

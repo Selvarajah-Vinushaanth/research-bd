@@ -95,6 +95,7 @@ class EmbeddingService:
         top_k: int = 10,
         paper_ids: Optional[List[str]] = None,
         threshold: float = 0.5,
+        user_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Perform semantic similarity search across paper chunks.
@@ -113,7 +114,32 @@ class EmbeddingService:
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
         # Build SQL query with optional paper_id filter
-        if paper_ids:
+        if paper_ids and user_id:
+            placeholders = ",".join(f"${i+3}" for i in range(len(paper_ids)))
+            results = await self.db.query_raw(
+                f"""
+                SELECT
+                    pc.id,
+                    pc.paper_id,
+                    pc.chunk_index,
+                    pc.chunk_text,
+                    pc.section,
+                    pc.token_count,
+                    1 - (pc.embedding <=> $1::vector) as similarity,
+                    p.title as paper_title
+                FROM paper_chunks pc
+                JOIN papers p ON pc.paper_id = p.id
+                WHERE pc.paper_id IN ({placeholders})
+                    AND pc.embedding IS NOT NULL
+                    AND p.uploaded_by = $2
+                ORDER BY pc.embedding <=> $1::vector
+                LIMIT {top_k}
+                """,
+                embedding_str,
+                user_id,
+                *paper_ids,
+            )
+        elif paper_ids:
             placeholders = ",".join(f"${i+2}" for i in range(len(paper_ids)))
             results = await self.db.query_raw(
                 f"""
@@ -135,6 +161,29 @@ class EmbeddingService:
                 """,
                 embedding_str,
                 *paper_ids,
+            )
+        elif user_id:
+            # Scope to current user's papers only
+            results = await self.db.query_raw(
+                f"""
+                SELECT
+                    pc.id,
+                    pc.paper_id,
+                    pc.chunk_index,
+                    pc.chunk_text,
+                    pc.section,
+                    pc.token_count,
+                    1 - (pc.embedding <=> $1::vector) as similarity,
+                    p.title as paper_title
+                FROM paper_chunks pc
+                JOIN papers p ON pc.paper_id = p.id
+                WHERE pc.embedding IS NOT NULL
+                    AND p.uploaded_by = $2
+                ORDER BY pc.embedding <=> $1::vector
+                LIMIT {top_k}
+                """,
+                embedding_str,
+                user_id,
             )
         else:
             results = await self.db.query_raw(
@@ -186,6 +235,7 @@ class EmbeddingService:
         self,
         paper_id: str,
         top_k: int = 10,
+        user_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Find papers related to a given paper using average embedding similarity.
@@ -205,25 +255,47 @@ class EmbeddingService:
 
         avg_embedding = avg_result[0]["avg_embedding"]
 
-        # Find similar papers (excluding the source)
-        results = await self.db.query_raw(
-            f"""
-            SELECT
-                p.id as paper_id,
-                p.title,
-                p.authors,
-                AVG(1 - (pc.embedding <=> $1::vector)) as avg_similarity
-            FROM paper_chunks pc
-            JOIN papers p ON pc.paper_id = p.id
-            WHERE pc.paper_id != $2
-                AND pc.embedding IS NOT NULL
-            GROUP BY p.id, p.title, p.authors
-            ORDER BY avg_similarity DESC
-            LIMIT {top_k}
-            """,
-            avg_embedding,
-            paper_id,
-        )
+        # Find similar papers (excluding the source, scoped to user)
+        if user_id:
+            results = await self.db.query_raw(
+                f"""
+                SELECT
+                    p.id as paper_id,
+                    p.title,
+                    p.authors,
+                    AVG(1 - (pc.embedding <=> $1::vector)) as avg_similarity
+                FROM paper_chunks pc
+                JOIN papers p ON pc.paper_id = p.id
+                WHERE pc.paper_id != $2
+                    AND pc.embedding IS NOT NULL
+                    AND p.uploaded_by = $3
+                GROUP BY p.id, p.title, p.authors
+                ORDER BY avg_similarity DESC
+                LIMIT {top_k}
+                """,
+                avg_embedding,
+                paper_id,
+                user_id,
+            )
+        else:
+            results = await self.db.query_raw(
+                f"""
+                SELECT
+                    p.id as paper_id,
+                    p.title,
+                    p.authors,
+                    AVG(1 - (pc.embedding <=> $1::vector)) as avg_similarity
+                FROM paper_chunks pc
+                JOIN papers p ON pc.paper_id = p.id
+                WHERE pc.paper_id != $2
+                    AND pc.embedding IS NOT NULL
+                GROUP BY p.id, p.title, p.authors
+                ORDER BY avg_similarity DESC
+                LIMIT {top_k}
+                """,
+                avg_embedding,
+                paper_id,
+            )
 
         related = []
         for row in results:
