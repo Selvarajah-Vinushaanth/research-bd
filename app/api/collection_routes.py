@@ -39,7 +39,7 @@ async def add_to_reading_list(request: ReadingListAddRequest, user=Depends(get_c
     db = get_db()
 
     paper = await db.paper.find_unique(where={"id": request.paper_id})
-    if not paper:
+    if not paper or paper.uploaded_by != user.id:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     try:
@@ -369,7 +369,7 @@ async def add_paper_to_collection(
         raise HTTPException(status_code=404, detail="Collection not found")
 
     paper = await db.paper.find_unique(where={"id": paper_id})
-    if not paper:
+    if not paper or paper.uploaded_by != user.id:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     try:

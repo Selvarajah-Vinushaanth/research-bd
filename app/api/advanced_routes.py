@@ -108,6 +108,8 @@ async def compare_papers(request: PaperComparisonRequest, user=Depends(get_curre
         paper = await db.paper.find_unique(where={"id": pid})
         if not paper:
             raise HTTPException(status_code=404, detail=f"Paper {pid} not found")
+        if paper.uploaded_by != user.id:
+            raise HTTPException(status_code=403, detail=f"Access denied for paper {pid}")
         papers.append(paper)
 
     from app.ai_models.embedding_model import get_embedding_model
@@ -250,7 +252,7 @@ async def generate_literature_review(
 
     for pid in request.paper_ids:
         paper = await db.paper.find_unique(where={"id": pid})
-        if not paper:
+        if not paper or paper.uploaded_by != user.id:
             continue
 
         chunks = await db.paperchunk.find_many(
@@ -585,7 +587,7 @@ async def generate_research_timeline(
     entries = []
     for pid in paper_ids:
         paper = await db.paper.find_unique(where={"id": pid})
-        if not paper:
+        if not paper or paper.uploaded_by != user.id:
             continue
 
         # Get key contribution from first chunk or title
@@ -965,6 +967,7 @@ async def export_citations(
     """
     from app.services.citation_service import get_citation_service
 
+    db = get_db()
     paper_ids = data.get("paper_ids", [])
     fmt = data.get("format", "APA")
 
@@ -975,6 +978,15 @@ async def export_citations(
     results = []
     for pid in paper_ids:
         try:
+            # Verify paper belongs to user
+            paper = await db.paper.find_unique(where={"id": pid})
+            if not paper or paper.uploaded_by != user.id:
+                results.append({
+                    "paper_id": pid,
+                    "format": fmt,
+                    "citation_text": f"[Citation unavailable for paper {pid}]",
+                })
+                continue
             citation = await citation_service.generate_citation(pid, fmt)
             results.append(citation)
         except Exception as e:
@@ -1079,7 +1091,7 @@ async def quick_search(
     try:
         papers = await db.paper.find_many(
             where={
-                "user_id": user.id,
+                "uploaded_by": user.id,
                 "title": {"contains": query, "mode": "insensitive"},
             },
             order={"created_at": "desc"},
@@ -1100,7 +1112,7 @@ async def quick_search(
 
     # ── Search Notes ──
     try:
-        notes = await db.note.find_many(
+        notes = await db.researchnote.find_many(
             where={
                 "user_id": user.id,
                 "OR": [

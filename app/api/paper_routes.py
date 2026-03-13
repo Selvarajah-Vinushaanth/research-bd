@@ -621,6 +621,7 @@ async def search_papers(
         top_k=request.top_k,
         paper_ids=request.paper_ids,
         threshold=request.threshold,
+        user_id=user.id,
     )
 
     from app.schemas.paper_schema import PaperSearchResult
@@ -648,6 +649,11 @@ async def get_citation(
     user=Depends(get_current_user),
 ):
     """Generate a citation for a paper in the specified format."""
+    db = get_db()
+    paper = await db.paper.find_unique(where={"id": paper_id})
+    if not paper or paper.uploaded_by != user.id:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
     citation_service = get_citation_service()
     result = await citation_service.generate_citation(paper_id, format)
     return CitationResponse(**result)
@@ -656,6 +662,11 @@ async def get_citation(
 @router.get("/{paper_id}/citations")
 async def get_all_citations(paper_id: str, user=Depends(get_current_user)):
     """Generate citations in all supported formats."""
+    db = get_db()
+    paper = await db.paper.find_unique(where={"id": paper_id})
+    if not paper or paper.uploaded_by != user.id:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
     citation_service = get_citation_service()
     return await citation_service.generate_all_formats(paper_id)
 
@@ -667,6 +678,11 @@ async def get_related_papers(
     user=Depends(get_current_user),
 ):
     """Find papers related to a given paper using semantic similarity."""
+    db = get_db()
+    paper = await db.paper.find_unique(where={"id": paper_id})
+    if not paper or paper.uploaded_by != user.id:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
     embedding_service = get_embedding_service()
-    related = await embedding_service.find_related_papers(paper_id, top_k)
+    related = await embedding_service.find_related_papers(paper_id, top_k, user_id=user.id)
     return [RelatedPaperResponse(**r) for r in related]

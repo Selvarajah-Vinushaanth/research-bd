@@ -381,6 +381,7 @@ async def run_clustering(request: ClusterRunRequest, user=Depends(get_current_us
             algorithm=request.algorithm,
             n_clusters=request.n_clusters,
             min_cluster_size=request.min_cluster_size,
+            user_id=user.id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -405,7 +406,7 @@ async def run_clustering(request: ClusterRunRequest, user=Depends(get_current_us
 async def get_clusters(user=Depends(get_current_user)):
     """Get all topic clusters."""
     clustering_service = get_clustering_service()
-    clusters = await clustering_service.get_clusters()
+    clusters = await clustering_service.get_clusters(user_id=user.id)
 
     return [
         TopicClusterResponse(

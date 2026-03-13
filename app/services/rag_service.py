@@ -40,6 +40,7 @@ class RAGService:
         paper_ids: Optional[List[str]] = None,
         top_k: int = 5,
         include_context: bool = True,
+        user_id: Optional[str] = None,
     ) -> Dict:
         """
         Full RAG pipeline: retrieve relevant chunks and generate an answer.
@@ -71,6 +72,7 @@ class RAGService:
             top_k=top_k * 2,  # Retrieve more, then re-rank
             paper_ids=search_paper_ids,
             threshold=0.05,
+            user_id=user_id,
         )
 
         if not search_results:

@@ -60,6 +60,17 @@ async def ask_question(request: ChatAskRequest, user=Depends(get_current_user)):
         if not session or session.user_id != user.id:
             raise HTTPException(status_code=404, detail="Chat session not found")
 
+    # Verify paper ownership before running RAG
+    if request.paper_id:
+        paper = await db.paper.find_unique(where={"id": request.paper_id})
+        if not paper or paper.uploaded_by != user.id:
+            raise HTTPException(status_code=404, detail="Paper not found")
+    if request.paper_ids:
+        for pid in request.paper_ids:
+            paper = await db.paper.find_unique(where={"id": pid})
+            if not paper or paper.uploaded_by != user.id:
+                raise HTTPException(status_code=404, detail=f"Paper {pid} not found")
+
     # Run RAG pipeline
     rag_service = get_rag_service()
     result = await rag_service.ask(
@@ -68,6 +79,7 @@ async def ask_question(request: ChatAskRequest, user=Depends(get_current_user)):
         paper_ids=request.paper_ids,
         top_k=request.top_k,
         include_context=request.include_context,
+        user_id=user.id,
     )
 
     # Store the message
