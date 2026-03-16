@@ -41,6 +41,7 @@ model User {
   activity_logs  ActivityLog[]
   comparisons    PaperComparison[]
   lit_reviews    LiteratureReview[]
+  gap_analyses   GapAnalysis[]
 
   @@map("users")
 }
@@ -86,6 +87,7 @@ model Paper {
   referenced_by   PaperReference[] @relation("ReferencedPaper")
   reading_items   ReadingListItem[]
   annotations     Annotation[]
+  gap_analyses    GapAnalysis[]
 
   @@index([uploaded_by])
   @@index([status])
@@ -478,6 +480,29 @@ model LiteratureReview {
 
   @@index([user_id, created_at])
   @@map("literature_reviews")
+}
+
+// ============================================
+// Gap Analysis
+// ============================================
+model GapAnalysis {
+  id                  String    @id @default(uuid())
+  user_id             String
+  paper_id            String
+  title               String    @default("Gap Analysis")
+  gaps                Json?
+  research_ideas      Json?
+  methodology_gaps    String[]  @default([])
+  data_gaps           String[]  @default([])
+  summary             String    @db.Text
+  created_at          DateTime  @default(now())
+
+  user                User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  paper               Paper     @relation(fields: [paper_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
+  @@index([paper_id])
+  @@map("gap_analyses")
 }
 
 // ============================================

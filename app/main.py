@@ -143,6 +143,7 @@ def create_app() -> FastAPI:
     from app.api.notes_routes import router as notes_router
     from app.api.collection_routes import router as collection_router
     from app.api.advanced_routes import router as advanced_router
+    from app.api.gap_analyzer_routes import router as gap_analyzer_router
     from app.api.health_routes import router as health_router
 
     app.include_router(health_router, tags=["Health"])
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     app.include_router(notes_router, prefix=f"{settings.API_V1_PREFIX}/notes", tags=["Notes"])
     app.include_router(collection_router, prefix=f"{settings.API_V1_PREFIX}/collections", tags=["Collections"])
     app.include_router(advanced_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Advanced"])
+    app.include_router(gap_analyzer_router, prefix=f"{settings.API_V1_PREFIX}/gap-analyzer", tags=["Gap Analyzer"])
 
     return app
 
