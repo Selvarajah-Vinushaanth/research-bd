@@ -17,6 +17,7 @@ class UserRegisterRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     institution: Optional[str] = None
     research_areas: List[str] = Field(default_factory=list)
+    recaptcha_token: str = Field(..., min_length=1)  # reCAPTCHA token from frontend
 
     @field_validator("password")
     @classmethod
@@ -34,6 +35,7 @@ class UserRegisterRequest(BaseModel):
 class UserLoginRequest(BaseModel):
     email: EmailStr
     password: str
+    recaptcha_token: str = Field(..., min_length=1)  # reCAPTCHA token from frontend
 
 
 class TokenResponse(BaseModel):

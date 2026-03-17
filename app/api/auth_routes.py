@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.config import settings
 from app.database.prisma_client import get_db
@@ -28,18 +28,29 @@ from app.schemas.user_schema import (
     UserRegisterRequest,
     UserUpdateRequest,
 )
+from app.services.recaptcha_service import is_valid_recaptcha
 
 logger = structlog.get_logger()
 router = APIRouter()
 
 
 @router.post("/register", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: UserRegisterRequest):
+async def register(request: UserRegisterRequest, http_request: Request):
     """
     Register a new user account.
     
-    Validates email uniqueness and password strength.
+    Validates email uniqueness, password strength, and reCAPTCHA token.
     """
+    # Verify reCAPTCHA token
+    client_ip = http_request.client.host if http_request.client else None
+    is_valid = await is_valid_recaptcha(request.recaptcha_token, client_ip)
+    if not is_valid:
+        logger.warning("registration_recaptcha_verification_failed", email=request.email)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reCAPTCHA verification failed",
+        )
+    
     db = get_db()
 
     # Check if email already exists
@@ -88,10 +99,22 @@ async def register(request: UserRegisterRequest):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: UserLoginRequest):
+async def login(request: UserLoginRequest, http_request: Request):
     """
     Authenticate a user and return JWT tokens.
+    
+    Verifies reCAPTCHA token before processing login.
     """
+    # Verify reCAPTCHA token
+    client_ip = http_request.client.host if http_request.client else None
+    is_valid = await is_valid_recaptcha(request.recaptcha_token, client_ip)
+    if not is_valid:
+        logger.warning("login_recaptcha_verification_failed", email=request.email)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reCAPTCHA verification failed",
+        )
+    
     db = get_db()
 
     user = await db.user.find_unique(where={"email": request.email})

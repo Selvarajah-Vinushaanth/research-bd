@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 3600
     CACHE_PREFIX: str = "research_assistant"
 
+    # --- Google reCAPTCHA ---
+    RECAPTCHA_SECRET_KEY: str = ""
+    RECAPTCHA_ENABLED: bool = True
+    RECAPTCHA_MIN_SCORE: float = 0.5  # For reCAPTCHA v3 (score-based)
+
     @property
     def allowed_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
