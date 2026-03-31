@@ -30,6 +30,7 @@ env/
 venv/
 .venv/
 ENV/
+research/
 
 # --- Poetry ---
 # Keep poetry.lock in version control
@@ -41,6 +42,11 @@ ENV/
 .env.production
 .env.staging
 !.env.example
+
+# --- Local credentials ---
+credentials.json
+*.pem
+*.key
 
 # --- IDE ---
 .vscode/
@@ -96,6 +102,9 @@ temp/
 # --- Docker volumes ---
 postgres_data/
 redis_data/
+
+# --- Node ---
+node_modules/
 
 # --- Celery ---
 celerybeat-schedule

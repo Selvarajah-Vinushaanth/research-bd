@@ -59,6 +59,8 @@ async def create_note(request: NoteCreateRequest, user=Depends(get_current_user)
         updated_at=note.updated_at,
     )
 
+    
+
 
 @router.get("", response_model=NoteListResponse)
 async def list_notes(
