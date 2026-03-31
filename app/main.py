@@ -145,6 +145,7 @@ def create_app() -> FastAPI:
     from app.api.advanced_routes import router as advanced_router
     from app.api.gap_analyzer_routes import router as gap_analyzer_router
     from app.api.health_routes import router as health_router
+    from app.api.scholar_routes import router as scholar_router
 
     app.include_router(health_router, tags=["Health"])
     app.include_router(auth_router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["Authentication"])
@@ -155,6 +156,7 @@ def create_app() -> FastAPI:
     app.include_router(collection_router, prefix=f"{settings.API_V1_PREFIX}/collections", tags=["Collections"])
     app.include_router(advanced_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Advanced"])
     app.include_router(gap_analyzer_router, prefix=f"{settings.API_V1_PREFIX}/gap-analyzer", tags=["Gap Analyzer"])
+    app.include_router(scholar_router, prefix=f"{settings.API_V1_PREFIX}/scholar", tags=["Google Scholar"])
 
     return app
 

@@ -38,10 +38,12 @@ model User {
   collections    Collection[]
   reading_list   ReadingListItem[]
   annotations    Annotation[]
-  activity_logs  ActivityLog[]
-  comparisons    PaperComparison[]
-  lit_reviews    LiteratureReview[]
-  gap_analyses   GapAnalysis[]
+  activity_logs    ActivityLog[]
+  comparisons      PaperComparison[]
+  lit_reviews      LiteratureReview[]
+  gap_analyses     GapAnalysis[]
+  scholar_searches ScholarSearch[]
+  scholar_saved    ScholarSavedItem[]
 
   @@map("users")
 }
@@ -522,4 +524,68 @@ model ActivityLog {
 
   @@index([user_id, created_at])
   @@map("activity_logs")
+}
+
+// ============================================
+// Google Scholar Search Results (cached)
+// ============================================
+model ScholarSearch {
+  id          String          @id @default(uuid())
+  user_id     String
+  query       String
+  result_count Int            @default(0)
+  created_at  DateTime        @default(now())
+
+  user        User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  results     ScholarResult[]
+
+  @@index([user_id, created_at])
+  @@index([query])
+  @@map("scholar_searches")
+}
+
+model ScholarResult {
+  id                String    @id @default(uuid())
+  search_id         String
+  scholar_id        String?
+  title             String
+  authors           String[]  @default([])
+  abstract          String?   @db.Text
+  publication_year  Int?
+  journal           String?
+  citation_count    Int       @default(0)
+  url               String?
+  pdf_url           String?
+  doi               String?
+  source            String    @default("google_scholar")
+  raw_data          Json?
+  created_at        DateTime  @default(now())
+
+  search            ScholarSearch @relation(fields: [search_id], references: [id], onDelete: Cascade)
+  saved_items       ScholarSavedItem[]
+
+  @@index([search_id])
+  @@index([scholar_id])
+  @@index([doi])
+  @@map("scholar_results")
+}
+
+// ============================================
+// Saved Scholar Papers (bookmarked / imported)
+// ============================================
+model ScholarSavedItem {
+  id                String    @id @default(uuid())
+  user_id           String
+  scholar_result_id String
+  paper_id          String?
+  notes             String?   @db.Text
+  is_imported       Boolean   @default(false)
+  saved_at          DateTime  @default(now())
+
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  scholar_result    ScholarResult @relation(fields: [scholar_result_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, scholar_result_id])
+  @@index([user_id, saved_at])
+  @@map("scholar_saved_items")
 }
